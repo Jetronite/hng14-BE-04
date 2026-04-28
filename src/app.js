@@ -2,7 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import profileRoutes from "./routes/profileRoutes.js";
-import requireApiVersion from "./middleware/requireApiVersion.js";
+import { requireApiVersion } from "./middlewares/requireApiVersion.js";
 
 dotenv.config();
 
@@ -26,3 +26,5 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error(err));
+
+export default app;
