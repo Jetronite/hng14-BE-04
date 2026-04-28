@@ -52,3 +52,24 @@ export const buildOptions = (params) => {
 
   return { limit, skip, sort, page };
 };
+
+export const buildPaginationMeta = ({ page, limit, total, baseUrl, query }) => {
+  const total_pages = Math.ceil(total / limit);
+
+  const queryString = new URLSearchParams(query);
+
+  const buildLink = (p) => {
+    queryString.set("page", p);
+    queryString.set("limit", limit);
+    return `${baseUrl}?${queryString.toString()}`;
+  };
+
+  return {
+    total_pages,
+    links: {
+      self: buildLink(page),
+      next: page < total_pages ? buildLink(page + 1) : null,
+      prev: page > 1 ? buildLink(page - 1) : null
+    }
+  };
+};

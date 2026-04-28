@@ -1,6 +1,5 @@
 import Profile from "../models/Profile.js";
-import { buildMongoQuery } from "../services/queryBuilder.js";
-import { buildOptions } from "../services/queryBuilder.js";
+import { buildMongoQuery, buildOptions, buildPaginationMeta } from "../services/queryBuilder.js";
 import { parseQuery } from "../services/parser.js";
 import { validateQueryParams } from "../utils/validateQuery.js";
 
@@ -40,11 +39,21 @@ export const searchProfiles = async (req, res) => {
       Profile.countDocuments(queryObj)
     ]);
 
+    const { total_pages, links } = buildPaginationMeta({
+      page: options.page,
+      limit: options.limit,
+      total,
+      baseUrl: "/api/profiles/search",
+      query: req.query
+    });
+
     res.status(200).json({
       status: "success",
       page,
       limit,
       total,
+      total_pages,
+      links,
       data
     });
 
@@ -74,11 +83,23 @@ export const getProfiles = async (req, res) => {
       Profile.countDocuments(queryObj)
     ]);
 
+
+    const { total_pages, links } = buildPaginationMeta({
+      page,
+      limit,
+      total,
+      baseUrl: "/api/profiles",
+      query: req.query
+    });
+
+
     return res.status(200).json({
       status: "success",
       page,
       limit,
       total,
+      total_pages,
+      links,
       data
     });
 
