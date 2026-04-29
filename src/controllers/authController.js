@@ -62,7 +62,7 @@ export const githubCallback = async (req, res) => {
     const accessToken = jwt.sign(
       payload,
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '3m' }
     );
 
     const jti = uuidv7() // Unique identifier for the token, useful for blacklisting
@@ -70,13 +70,13 @@ export const githubCallback = async (req, res) => {
     const refreshToken = jwt.sign(
       { userId: user.id, jti }, // Refresh tokens usually need less info
       process.env.JWT_REFRESH,
-      { expiresIn: '1h' }
+      { expiresIn: '5m' }
     );
 
     await RefreshToken.create({
       token: refreshToken,
       user_id: user.id,
-      expires_at: new Date(Date.now() + 5 * 60 * 1000)
+      expires_at: new Date(Date.now() + 5 * 1000)
     });
 
     // 📦 Step 6: Return Tokens via Secure Cookies
@@ -84,33 +84,18 @@ export const githubCallback = async (req, res) => {
       httpOnly: true, // Prevents JavaScript from reading the cookie
       secure: process.env.NODE_ENV === "production", // Only sends over HTTPS in prod
       sameSite: "lax",
-      maxAge: 1 * 60 * 1000, // 1 hour
+      maxAge: 3 * 1000, // 3 minutes
     });
 
     res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 1 * 60 * 1000, // 1 hour
+      maxAge: 5 * 1000, // 5 minutes
     });
 
-    // // Redirect the user back to your frontend dashboard
-    // res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
-
-
-    // For testing purposes, we can also return the token in the response body
-    // This will print the token in your terminal AND show it in your browser
-    console.log("--- YOUR APP TOKEN ---");
-    console.log(accessToken);
-
-    return res.json({
-      status: "success",
-      accessToken,
-      role: user.role
-    });
-
-
-
+    // Redirect the user back to your frontend dashboard
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
 
   } catch (error) {
     console.error("Auth Error:", error.response?.data || error.message);
@@ -169,7 +154,7 @@ export const refreshTokenHandler = async (req, res) => {
     const newAccessToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "3m" }
     );
 
     const newJti = uuidv7();
@@ -184,7 +169,7 @@ export const refreshTokenHandler = async (req, res) => {
     await RefreshToken.create({
       token: newRefreshToken,
       user_id: user.id,
-      expires_at: new Date(Date.now() + 5 * 60 * 1000)
+      expires_at: new Date(Date.now() + 5 * 1000)
     });
 
     // 8. Update Cookies
