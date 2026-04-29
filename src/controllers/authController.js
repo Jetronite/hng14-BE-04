@@ -62,7 +62,7 @@ export const githubCallback = async (req, res) => {
     const accessToken = jwt.sign(
       payload,
       process.env.JWT_SECRET,
-      { expiresIn: '3m' }
+      { expiresIn: '1h' }
     );
 
     const jti = uuidv7() // Unique identifier for the token, useful for blacklisting
@@ -70,7 +70,7 @@ export const githubCallback = async (req, res) => {
     const refreshToken = jwt.sign(
       { userId: user.id, jti }, // Refresh tokens usually need less info
       process.env.JWT_REFRESH,
-      { expiresIn: '5m' }
+      { expiresIn: '1h' }
     );
 
     await RefreshToken.create({
@@ -84,18 +84,33 @@ export const githubCallback = async (req, res) => {
       httpOnly: true, // Prevents JavaScript from reading the cookie
       secure: process.env.NODE_ENV === "production", // Only sends over HTTPS in prod
       sameSite: "lax",
-      maxAge: 3 * 60 * 1000, // 3 minutes
+      maxAge: 1 * 60 * 1000, // 1 hour
     });
 
     res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 5 * 60 * 1000, // 5 minutes
+      maxAge: 1 * 60 * 1000, // 1 hour
     });
 
-    // Redirect the user back to your frontend dashboard
-    res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+    // // Redirect the user back to your frontend dashboard
+    // res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+
+
+    // For testing purposes, we can also return the token in the response body
+    // This will print the token in your terminal AND show it in your browser
+    console.log("--- YOUR APP TOKEN ---");
+    console.log(accessToken);
+
+    return res.json({
+      status: "success",
+      accessToken,
+      role: user.role
+    });
+
+
+
 
   } catch (error) {
     console.error("Auth Error:", error.response?.data || error.message);
@@ -181,8 +196,8 @@ export const refreshTokenHandler = async (req, res) => {
   } catch (err) {
     // If it's an expired error, we can proactively delete it from the DB
     if (err.name === 'TokenExpiredError') {
-       const refreshToken = req.cookies.refresh_token;
-       await RefreshToken.deleteOne({ token: refreshToken });
+      const refreshToken = req.cookies.refresh_token;
+      await RefreshToken.deleteOne({ token: refreshToken });
     }     // If verification fails or tampered
     return res.status(401).json({ status: "error", message: "Session expired" });
   }
@@ -208,9 +223,9 @@ export const logoutHandler = async (req, res) => {
       message: "Logged out successfully"
     });
   } catch (error) {
-    return res.status(500).json({ 
-      status: "error", 
-      message: "Logout failed" 
+    return res.status(500).json({
+      status: "error",
+      message: "Logout failed"
     });
   }
 };
