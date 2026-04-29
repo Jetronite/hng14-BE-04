@@ -77,7 +77,7 @@ export const githubCallback = async (req, res) => {
     await RefreshToken.create({
       token: refreshToken,
       user_id: user.id,
-      expires_at: new Date(Date.now() + 5 * 1000)
+      expires_at: new Date(Date.now() + 5 * 60 * 1000)
     });
 
     // If 'state' is not 'web', we assume it's the CLI's state/callback
@@ -92,14 +92,14 @@ export const githubCallback = async (req, res) => {
       httpOnly: true, // Prevents JavaScript from reading the cookie
       secure: process.env.NODE_ENV === "production", // Only sends over HTTPS in prod
       sameSite: "lax",
-      maxAge: 3 * 1000, // 3 minutes
+      maxAge: 3 * 60 * 1000, // 3 minutes
     });
 
     res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 5 * 1000, // 5 minutes
+      maxAge: 5 * 60 * 1000, // 5 minutes
     });
 
     // Redirect the user back to your frontend dashboard
@@ -135,7 +135,7 @@ export const githubRedirect = (req, res) => {
 
 export const refreshTokenHandler = async (req, res) => {
   // 1. Get the refresh token from cookies
-  const refreshToken = req.cookies.refresh_token;
+  const refreshToken = req.cookies.refresh_token || req.body.refresh_token;;
 
   if (!refreshToken) {
     return res.status(401).json({ status: "error", message: "Refresh token missing" });
@@ -182,12 +182,22 @@ export const refreshTokenHandler = async (req, res) => {
     await RefreshToken.create({
       token: newRefreshToken,
       user_id: user.id,
-      expires_at: new Date(Date.now() + 5 * 1000)
+      expires_at: new Date(Date.now() + 5 * 60 * 1000)
     });
 
+    // 7. RESPOND BASED ON CLIENT TYPE
+    if (req.body.refresh_token) {
+      // CLI Request: Return as JSON
+      return res.json({
+        status: "success",
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken
+      });
+    }
+    // Web Request: Return via Cookies
     // 8. Update Cookies
-    res.cookie("access_token", newAccessToken, { httpOnly: true, secure: true });
-    res.cookie("refresh_token", newRefreshToken, { httpOnly: true, secure: true });
+    res.cookie("access_token", newAccessToken, { httpOnly: true, secure: true, maxAge: 3 * 60 * 1000 });
+    res.cookie("refresh_token", newRefreshToken, { httpOnly: true, secure: true, maxAge: 5 * 60 * 1000 });
 
     return res.json({ status: "success", message: "Tokens rotated" });
 
@@ -225,5 +235,30 @@ export const logoutHandler = async (req, res) => {
       status: "error",
       message: "Logout failed"
     });
+  }
+};
+
+
+// src/controllers/authController.js
+
+export const getMe = async (req, res) => {
+  try {
+    // req.user is populated by your authenticate middleware
+    if (!req.user) {
+      return res.status(401).json({ status: "error", message: "Not authenticated" });
+    }
+
+    // You can return the data directly from req.user
+    // or fetch the full user object from the DB if you need more fields
+    return res.status(200).json({
+      status: "success",
+      data: {
+        id: req.user.id,
+        role: req.user.role,
+        // If your middleware doesn't attach username, you'd fetch it here
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ status: "error", message: "Server error" });
   }
 };

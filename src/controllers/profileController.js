@@ -3,6 +3,7 @@ import { buildMongoQuery, buildOptions, buildPaginationMeta } from "../services/
 import { parseQuery } from "../services/parser.js";
 import { validateQueryParams } from "../utils/validateQuery.js";
 import { Parser } from "json2csv";
+import { v7 as uuidV7 } from "uuid"
 
 export const searchProfiles = async (req, res) => {
   try {
@@ -115,19 +116,27 @@ export const getProfiles = async (req, res) => {
 
 export const createProfile = async (req, res) => {
   try {
-    const profile = await Profile.create(req.body);
+    // 1. Prepare the data by merging req.body with the generated ID
+    const profileData = {
+      ...req.body,
+      id: uuidV7().slice(0, 8) // Attach the ID here so Mongoose sees it
+    };
+
+    // 2. Now save it to the database
+    const profile = await Profile.create(profileData);
 
     return res.status(201).json({
       status: "success",
       data: profile
     });
 
-  } catch (err) {
-    console.error(err);
+  }catch (error) {
+    // This will print the EXACT error in your backend console
+    console.error("CRITICAL ERROR IN CREATE_PROFILE:", error);
 
     return res.status(500).json({
-      status: "error",
-      message: "Server error"
+      status: "error", 
+      message: error.message // T
     });
   }
 };
@@ -174,13 +183,28 @@ export const exportProfiles = async (req, res) => {
     // 3. Fetch data (Full set, no .limit() or .skip())
     const data = await Profile.find(queryObj).sort(sort).lean();
 
-    const fields = ["id", "name", "gender", "age", "country_name", "created_at"];
+    // 3. Define REQUIRED Stage 3 Columns (In Order)
+    const fields = [
+      "id", 
+      "name", 
+      "gender", 
+      "gender_probability", 
+      "age", 
+      "age_group", 
+      "country_id", 
+      "country_name", 
+      "country_probability", 
+      "created_at"
+    ];
+
     const parser = new Parser({ fields });
     const csv = parser.parse(data);
 
+    // 4. Set headers for Stage 3 Compliance
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     res.header("Content-Type", "text/csv");
-    res.attachment(`profiles_${Date.now()}.csv`);
-    return res.send(csv);
+    res.attachment(`profiles_${timestamp}.csv`); // Filename: profiles_<timestamp>.csv
+    return res.status(200).send(csv);
 
   } catch (err) {
     console.error(err);

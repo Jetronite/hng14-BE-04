@@ -22,8 +22,8 @@ app.use(cookieParser()); // For parsing cookies, needed for refresh token handli
 // 2. CORS (Set this before routes)
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Version"); // Add X-API-Version
   next();
 });
 
@@ -38,7 +38,7 @@ app.use("/api", requireApiVersion);
 // 5. Protected Routes Setup
 // Option A: Apply globally to /api
 app.use("/api", authenticate); 
-app.use("/api/profiles", authenticate, apiLimiter, profileRoutes); // Apply auth and rate limiting to profile routes
+app.use("/api/profiles", apiLimiter, profileRoutes); // Apply auth and rate limiting to profile routes
 
 // // Option B (Recommended): Apply specifically to the routes that need it
 // // This prevents "locking out" future public API endpoints

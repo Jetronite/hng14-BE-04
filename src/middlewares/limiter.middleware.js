@@ -3,22 +3,23 @@ import rateLimit from "express-rate-limit";
 // STRICT for Auth (Brute-force protection)
 export const authLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, 
+  limit: 10, // Use 'limit' instead of 'max' (v7+ syntax)
   message: { status: "error", message: "Too many login attempts. Try again in a minute." },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { ip: false }, // Disables the strict IP/IPv6 warning
 });
 
 // PER-USER for API
 export const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 60,
+  limit: 60, // Use 'limit' instead of 'max'
   keyGenerator: (req) => {
-    // If the user is logged in, limit by their ID. 
-    // Otherwise, fall back to their IP address.
-    return req.user?.userId || req.ip; 
+    // Stage 3 logic: Limit by User ID if available, else IP
+    return req.user?.id || req.ip; 
   },
-  message: { status: "error", message: "Daily/Minute quota exceeded." },
+  message: { status: "error", message: "API quota exceeded. Please wait a minute." },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { ip: false }, // Fixes the ERR_ERL_KEY_GEN_IPV6 crash
 });
