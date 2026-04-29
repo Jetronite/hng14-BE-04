@@ -10,7 +10,8 @@ dotenv.config();
 
 export const githubCallback = async (req, res) => {
   try {
-    const { code } = req.query;
+
+    const { code, state } = req.query; // 'state' helps us identify the caller
 
     if (!code) {
       return res.status(400).json({ status: "error", message: "No code provided" });
@@ -79,6 +80,13 @@ export const githubCallback = async (req, res) => {
       expires_at: new Date(Date.now() + 5 * 1000)
     });
 
+    // If 'state' is not 'web', we assume it's the CLI's state/callback
+    if (state && state !== 'web') {
+      // Send tokens back to CLI local server via URL parameters
+      const cliCallbackUrl = `http://localhost:5678/callback?access_token=${accessToken}&refresh_token=${refreshToken}&state=${state}`;
+      return res.redirect(cliCallbackUrl);
+    }
+
     // 📦 Step 6: Return Tokens via Secure Cookies
     res.cookie("access_token", accessToken, {
       httpOnly: true, // Prevents JavaScript from reading the cookie
@@ -104,11 +112,16 @@ export const githubCallback = async (req, res) => {
 };
 
 export const githubRedirect = (req, res) => {
-  // These are the parameters GitHub needs to know who is asking
+  // Capture PKCE and custom redirect info from the CLI request
+  const { code_challenge, state } = req.query;
+
+
+  // These are the parameters GitHub needs to know who is asking for authentication and where to send the user back after login.
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID,
     redirect_uri: process.env.GITHUB_CALLBACK_URL,
     scope: "read:user user:email", // We ask for identity and email
+    state: state || 'web', // If no state, assume it's the web app
   });
 
   const githubUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
