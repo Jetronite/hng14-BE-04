@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -61,4 +63,33 @@ export const authenticate = async (req, res, next) => {
       message: "Server error"
     });
   }
+};
+
+
+export const authorize = (...allowedRoles) => {
+  return (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          status: "error",
+          message: "Unauthorized"
+        });
+      }
+
+      if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({
+          status: "error",
+          message: "Forbidden: insufficient permissions"
+        });
+      }
+
+      next();
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        status: "error",
+        message: "Server error"
+      });
+    }
+  };
 };
