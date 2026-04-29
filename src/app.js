@@ -18,26 +18,26 @@ app.use(express.json());
 app.use(requestLogger); // Custom logger to capture request details and response status
 app.use(cookieParser()); // For parsing cookies, needed for refresh token handling
 
-
 // 2. CORS (Set this before routes)
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Origin", frontendUrl);
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Version"); // Add X-API-Version
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Version");
+  res.header("Access-Control-Allow-Credentials", "true"); // Required for cookies
   next();
 });
 
-
 // 3. Public Routes (No authentication needed)
 // These MUST come before the app.use("/api", authenticate) line
-app.use('/auth', authLimiter, authRoutes); 
+app.use('/auth', authLimiter, authRoutes);
 
 // 4. API Versioning (Apply to all /api routes)
 app.use("/api", requireApiVersion);
 
 // 5. Protected Routes Setup
 // Option A: Apply globally to /api
-app.use("/api", authenticate); 
+app.use("/api", authenticate);
 app.use("/api/profiles", apiLimiter, profileRoutes); // Apply auth and rate limiting to profile routes
 
 // // Option B (Recommended): Apply specifically to the routes that need it

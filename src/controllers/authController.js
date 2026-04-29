@@ -66,6 +66,8 @@ export const githubCallback = async (req, res) => {
       { expiresIn: '3m' }
     );
 
+    console.log("Access Token: " + accessToken)
+
     const jti = uuidv7() // Unique identifier for the token, useful for blacklisting
     // Refresh Token - Longer expiry
     const refreshToken = jwt.sign(
@@ -88,16 +90,17 @@ export const githubCallback = async (req, res) => {
     }
 
     // 📦 Step 6: Return Tokens via Secure Cookies
+    const isProduction = process.env.NODE_ENV === "production";
     res.cookie("access_token", accessToken, {
       httpOnly: true, // Prevents JavaScript from reading the cookie
-      secure: process.env.NODE_ENV === "production", // Only sends over HTTPS in prod
+      secure: isProduction, // Only sends over HTTPS in prod
       sameSite: "lax",
       maxAge: 3 * 60 * 1000, // 3 minutes
     });
 
     res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
       maxAge: 5 * 60 * 1000, // 5 minutes
     });
@@ -196,8 +199,19 @@ export const refreshTokenHandler = async (req, res) => {
     }
     // Web Request: Return via Cookies
     // 8. Update Cookies
-    res.cookie("access_token", newAccessToken, { httpOnly: true, secure: true, maxAge: 3 * 60 * 1000 });
-    res.cookie("refresh_token", newRefreshToken, { httpOnly: true, secure: true, maxAge: 5 * 60 * 1000 });
+    const isProduction = process.env.NODE_ENV === "production";
+    res.cookie("access_token", newAccessToken, { 
+      httpOnly: true, 
+      secure: isProduction, 
+      sameSite: "lax",
+      maxAge: 3 * 60 * 1000 
+    });
+    res.cookie("refresh_token", newRefreshToken, { 
+      httpOnly: true, 
+      secure: isProduction, 
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000 
+    });
 
     return res.json({ status: "success", message: "Tokens rotated" });
 
@@ -223,8 +237,13 @@ export const logoutHandler = async (req, res) => {
     }
 
     // 3. Clear the cookies on the browser
-    res.clearCookie("access_token");
-    res.clearCookie("refresh_token");
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax"
+    };
+    res.clearCookie("access_token", cookieOptions);
+    res.clearCookie("refresh_token", cookieOptions);
 
     return res.status(200).json({
       status: "success",
@@ -248,14 +267,16 @@ export const getMe = async (req, res) => {
       return res.status(401).json({ status: "error", message: "Not authenticated" });
     }
 
-    // You can return the data directly from req.user
-    // or fetch the full user object from the DB if you need more fields
+    // Return the full user data from middleware (includes username, avatar_url)
     return res.status(200).json({
       status: "success",
       data: {
-        id: req.user.id,
-        role: req.user.role,
-        // If your middleware doesn't attach username, you'd fetch it here
+        user: {
+          id: req.user.id,
+          role: req.user.role,
+          username: req.user.username,
+          avatar_url: req.user.avatar_url
+        }
       }
     });
   } catch (error) {

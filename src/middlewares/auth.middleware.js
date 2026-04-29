@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const authenticate = async (req, res, next) => {
+  console.log("🔥 AUTH MIDDLEWARE HIT");
   try {
     // 1. Check Cookies FIRST, then fall back to Headers
     let token = req.cookies?.access_token;
@@ -29,7 +30,6 @@ export const authenticate = async (req, res, next) => {
         message: "Invalid or expired access token"
       });
     }
-
     // Fetch user
     const user = await User.findOne({ id: decoded.userId });
 
@@ -51,7 +51,9 @@ export const authenticate = async (req, res, next) => {
     // Attach user to request
     req.user = {
       id: user.id,
-      role: user.role
+      role: user.role,
+      username: user.username,
+      avatar_url: user.avatar_url
     };
 
     next();
@@ -75,7 +77,6 @@ export const authorize = (...allowedRoles) => {
           message: "Unauthorized"
         });
       }
-
       if (!allowedRoles.includes(req.user.role)) {
         return res.status(403).json({
           status: "error",

@@ -6,6 +6,7 @@ import { Parser } from "json2csv";
 import { v7 as uuidV7 } from "uuid"
 
 export const searchProfiles = async (req, res) => {
+    console.log("🚀 SEARCH CONTROLLER HIT");
   try {
     const { q, page: rawPage, limit: rawLimit } = req.query;
 
@@ -42,12 +43,18 @@ export const searchProfiles = async (req, res) => {
     ]);
 
     const { total_pages, links } = buildPaginationMeta({
-      page: options.page,
-      limit: options.limit,
+      page,
+      limit,
       total,
       baseUrl: "/api/profiles/search",
       query: req.query
     });
+
+    console.log("RAW QUERY:", q);                   //Remove this after debug
+    console.log("PARSED:", filterParams);           //Remove this after debug
+    console.log("MONGO QUERY:", queryObj);          //Remove this after debug
+    console.log("SORT:", sort);                     //Remove this after debug
+    console.log("OPTIONS:", { limit, skip, page }); //Remove this after debug
 
     res.status(200).json({
       status: "success",
@@ -130,12 +137,12 @@ export const createProfile = async (req, res) => {
       data: profile
     });
 
-  }catch (error) {
+  } catch (error) {
     // This will print the EXACT error in your backend console
     console.error("CRITICAL ERROR IN CREATE_PROFILE:", error);
 
     return res.status(500).json({
-      status: "error", 
+      status: "error",
       message: error.message // T
     });
   }
@@ -185,15 +192,15 @@ export const exportProfiles = async (req, res) => {
 
     // 3. Define REQUIRED Stage 3 Columns (In Order)
     const fields = [
-      "id", 
-      "name", 
-      "gender", 
-      "gender_probability", 
-      "age", 
-      "age_group", 
-      "country_id", 
-      "country_name", 
-      "country_probability", 
+      "id",
+      "name",
+      "gender",
+      "gender_probability",
+      "age",
+      "age_group",
+      "country_id",
+      "country_name",
+      "country_probability",
       "created_at"
     ];
 
