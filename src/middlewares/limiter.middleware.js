@@ -16,10 +16,9 @@ export const apiLimiter = rateLimit({
   limit: 60, // Use 'limit' instead of 'max'
   keyGenerator: (req) => {
     // Stage 3 logic: Limit by User ID if available, else IP
-    return req.user?.id || req.ip; 
+    return req.user?.id || rateLimit.ipKeyGenerator(req.ip);
   },
   message: { status: "error", message: "API quota exceeded. Please wait a minute." },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { ip: false }, // Fixes the ERR_ERL_KEY_GEN_IPV6 crash
 });

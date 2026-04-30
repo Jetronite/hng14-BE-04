@@ -1,3 +1,4 @@
+import axios from "axios";
 import Profile from "../models/Profile.js";
 import { buildMongoQuery, buildOptions, buildPaginationMeta } from "../services/queryBuilder.js";
 import { parseQuery } from "../services/parser.js";
@@ -49,12 +50,6 @@ export const searchProfiles = async (req, res) => {
       baseUrl: "/api/profiles/search",
       query: req.query
     });
-
-    console.log("RAW QUERY:", q);                   //Remove this after debug
-    console.log("PARSED:", filterParams);           //Remove this after debug
-    console.log("MONGO QUERY:", queryObj);          //Remove this after debug
-    console.log("SORT:", sort);                     //Remove this after debug
-    console.log("OPTIONS:", { limit, skip, page }); //Remove this after debug
 
     res.status(200).json({
       status: "success",
@@ -121,30 +116,83 @@ export const getProfiles = async (req, res) => {
   }
 };
 
+const deriveAgeGroup = (age) => {
+  if (age === null || age === undefined) return null;
+  if (age <= 12) return 'child';
+  if (age <= 19) return 'teen';
+  return 'adult';
+};
+
+const resolveCountryName = (countryId) => {
+  if (!countryId) return null;
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(countryId);
+  } catch {
+    return countryId;
+  }
+};
+
+export const getProfileById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const profile = await Profile.findOne({ id });
+
+    if (!profile) {
+      return res.status(404).json({ status: 'error', message: 'Profile not found' });
+    }
+
+    return res.status(200).json({ status: 'success', data: profile });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: 'error', message: 'Server error' });
+  }
+};
+
 export const createProfile = async (req, res) => {
   try {
-    // 1. Prepare the data by merging req.body with the generated ID
-    const profileData = {
-      ...req.body,
-      id: uuidV7().slice(0, 8) // Attach the ID here so Mongoose sees it
-    };
+    const { name } = req.body;
+    if (!name || !name.toString().trim()) {
+      return res.status(400).json({ status: 'error', message: 'Name is required' });
+    }
 
-    // 2. Now save it to the database
-    const profile = await Profile.create(profileData);
+    const normalizedName = name.toString().trim();
+    const [genderRes, ageRes, nationalizeRes] = await Promise.all([
+      axios.get('https://api.genderize.io', { params: { name: normalizedName } }),
+      axios.get('https://api.agify.io', { params: { name: normalizedName } }),
+      axios.get('https://api.nationalize.io', { params: { name: normalizedName } })
+    ]);
 
-    return res.status(201).json({
-      status: "success",
-      data: profile
+    const gender = genderRes.data.gender || null;
+    const genderProbability = Number(genderRes.data.probability || 0);
+    const age = ageRes.data.age || null;
+    const ageGroup = deriveAgeGroup(age);
+
+    const countryPrediction = Array.isArray(nationalizeRes.data.country) ? nationalizeRes.data.country[0] : null;
+    const countryId = countryPrediction?.country_id || null;
+    const countryName = resolveCountryName(countryId);
+    const countryProbability = Number(countryPrediction?.probability || 0);
+
+    const profile = await Profile.create({
+      id: uuidV7(),
+      name: normalizedName,
+      gender,
+      gender_probability: genderProbability,
+      age,
+      age_group: ageGroup,
+      country_id: countryId,
+      country_name: countryName,
+      country_probability: countryProbability
     });
 
+    return res.status(201).json({ status: 'success', data: profile });
   } catch (error) {
-    // This will print the EXACT error in your backend console
-    console.error("CRITICAL ERROR IN CREATE_PROFILE:", error);
+    console.error('CRITICAL ERROR IN CREATE_PROFILE:', error);
 
-    return res.status(500).json({
-      status: "error",
-      message: error.message // T
-    });
+    if (error.code === 11000) {
+      return res.status(409).json({ status: 'error', message: 'Profile already exists' });
+    }
+
+    return res.status(500).json({ status: 'error', message: 'Failed to create profile' });
   }
 };
 

@@ -1,140 +1,185 @@
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
-import { findOrCreateUser } from '../services/user.service.js';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { findOrCreateUser } from '../services/user.service.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 import { v7 as uuidv7 } from 'uuid';
 import { User } from '../models/User.js';
 
 dotenv.config();
 
+const pkceSessions = new Map();
+const PKCE_TIMEOUT_MS = 5 * 60 * 1000;
+
+const cleanupPkceSessions = () => {
+  const now = Date.now();
+  for (const [key, value] of pkceSessions) {
+    if (value.expiresAt <= now) {
+      pkceSessions.delete(key);
+    }
+  }
+};
+
+setInterval(cleanupPkceSessions, 60 * 1000);
+
+const savePkceSession = ({ state, codeVerifier, returnUrl, clientType }) => {
+  pkceSessions.set(state, {
+    codeVerifier,
+    returnUrl,
+    clientType,
+    expiresAt: Date.now() + PKCE_TIMEOUT_MS
+  });
+};
+
+export const registerPkceSession = (req, res) => {
+  const { state, code_verifier: codeVerifier, return_url: returnUrl } = req.body;
+
+  if (!state || !codeVerifier) {
+    return res.status(400).json({ status: 'error', message: 'Missing PKCE session data' });
+  }
+
+  savePkceSession({
+    state,
+    codeVerifier,
+    returnUrl: returnUrl || '',
+    clientType: 'cli'
+  });
+
+  return res.status(200).json({ status: 'success' });
+};
+
+export const githubRedirect = (req, res) => {
+  let { code_challenge: codeChallenge, state } = req.query;
+
+  if (!state) {
+    state = crypto.randomBytes(16).toString('hex');
+  }
+
+  const existingSession = pkceSessions.get(state);
+
+  if (!codeChallenge) {
+    if (existingSession && existingSession.codeVerifier) {
+      codeChallenge = crypto.createHash('sha256').update(existingSession.codeVerifier).digest('base64url');
+    } else {
+      const codeVerifier = crypto.randomBytes(64).toString('base64url');
+      codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+
+      savePkceSession({
+        state,
+        codeVerifier,
+        returnUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard`,
+        clientType: 'web'
+      });
+    }
+  } else if (!existingSession) {
+    return res.status(400).json({ status: 'error', message: 'PKCE session not found. Retry login.' });
+  }
+
+  const params = new URLSearchParams({
+    client_id: process.env.GITHUB_CLIENT_ID,
+    redirect_uri: process.env.GITHUB_CALLBACK_URL,
+    scope: 'read:user user:email',
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256'
+  });
+
+  return res.redirect(`https://github.com/login/oauth/authorize?${params.toString()}`);
+};
+
 export const githubCallback = async (req, res) => {
   try {
+    const { code, state } = req.query;
 
-    const { code, state } = req.query; // 'state' helps us identify the caller
-
-    if (!code) {
-      return res.status(400).json({ status: "error", message: "No code provided" });
+    if (!code || !state) {
+      return res.status(400).json({ status: 'error', message: 'Invalid OAuth callback' });
     }
 
-    // Step 3A: Exchange code for Access Token
+    const session = pkceSessions.get(state);
+    if (!session || !session.codeVerifier) {
+      return res.status(400).json({ status: 'error', message: 'PKCE session expired or missing' });
+    }
+
+    pkceSessions.delete(state);
+
     const tokenResponse = await axios.post(
-      "https://github.com/login/oauth/access_token",
+      'https://github.com/login/oauth/access_token',
       {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
+        code_verifier: session.codeVerifier,
+        redirect_uri: process.env.GITHUB_CALLBACK_URL
       },
-      { headers: { Accept: "application/json" } }
+      { headers: { Accept: 'application/json' } }
     );
 
-    // DEBUG: Look at what GitHub actually said
-    console.log("GitHub Response Data:", tokenResponse.data);
-
     if (tokenResponse.data.error) {
-      console.error("OAuth Error:", tokenResponse.data.error_description);
-      return res.status(401).json({ status: "error", message: tokenResponse.data.error_description });
+      console.error('OAuth Error:', tokenResponse.data.error_description);
+      return res.status(401).json({ status: 'error', message: tokenResponse.data.error_description });
     }
 
     const githubAccessToken = tokenResponse.data.access_token;
 
-    // Step 3B: Get GitHub User Data
-    const userResponse = await axios.get("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${githubAccessToken}` },
+    const userResponse = await axios.get('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${githubAccessToken}` }
     });
 
-    // Step 3C: Get GitHub Emails (since primary email can be private)
-    const emailResponse = await axios.get("https://api.github.com/user/emails", {
-      headers: { Authorization: `Bearer ${githubAccessToken}` },
+    const emailResponse = await axios.get('https://api.github.com/user/emails', {
+      headers: { Authorization: `Bearer ${githubAccessToken}` }
     });
-    const primaryEmail = emailResponse.data.find(e => e.primary)?.email;
 
-    // Step 4: Use your Service to save the user
+    const primaryEmail = emailResponse.data.find((e) => e.primary)?.email;
     const user = await findOrCreateUser(userResponse.data, primaryEmail);
 
-    // 🔐 Step 5: Issue Tokens
-    // The "Payload" contains the essential user info
-    const payload = {
-      userId: user.id,
-      role: user.role,
-    };
+    const payload = { userId: user.id, role: user.role };
 
-    // Access Token - Short expiry for security
-    const accessToken = jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '3m' }
-    );
-
-    console.log("Access Token: " + accessToken)
-
-    const jti = uuidv7() // Unique identifier for the token, useful for blacklisting
-    // Refresh Token - Longer expiry
-    const refreshToken = jwt.sign(
-      { userId: user.id, jti }, // Refresh tokens usually need less info
-      process.env.JWT_REFRESH,
-      { expiresIn: '5m' }
-    );
+    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '3m' });
+    const jti = uuidv7();
+    const refreshToken = jwt.sign({ userId: user.id, jti }, process.env.JWT_REFRESH, { expiresIn: '5m' });
 
     await RefreshToken.create({
       token: refreshToken,
       user_id: user.id,
-      expires_at: new Date(Date.now() + 5 * 60 * 1000)
+      expires_at: new Date(Date.now() + PKCE_TIMEOUT_MS)
     });
 
-    // If 'state' is not 'web', we assume it's the CLI's state/callback
-    if (state && state !== 'web') {
-      // Send tokens back to CLI local server via URL parameters
-      const cliCallbackUrl = `http://localhost:5678/callback?access_token=${accessToken}&refresh_token=${refreshToken}&state=${state}`;
-      return res.redirect(cliCallbackUrl);
+    if (session.clientType === 'cli') {
+      const returnUrl = session.returnUrl || 'http://localhost:5678/callback';
+      return res.redirect(`${returnUrl}?access_token=${accessToken}&refresh_token=${refreshToken}&state=${state}`);
     }
 
-    // 📦 Step 6: Return Tokens via Secure Cookies
-    const isProduction = process.env.NODE_ENV === "production";
-    res.cookie("access_token", accessToken, {
-      httpOnly: true, // Prevents JavaScript from reading the cookie
-      secure: isProduction, // Only sends over HTTPS in prod
-      sameSite: "lax",
-      maxAge: 3 * 60 * 1000, // 3 minutes
-    });
+    const isProduction = process.env.NODE_ENV === 'production';
+    const csrfToken = crypto.randomBytes(24).toString('hex');
 
-    res.cookie("refresh_token", refreshToken, {
+    res.cookie('access_token', accessToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: "lax",
-      maxAge: 5 * 60 * 1000, // 5 minutes
+      sameSite: 'lax',
+      maxAge: 3 * 60 * 1000
     });
 
-    // Redirect the user back to your frontend dashboard
-    res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 5 * 60 * 1000
+    });
 
+    res.cookie('csrf_token', csrfToken, {
+      httpOnly: false,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 5 * 60 * 1000
+    });
+
+    return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
   } catch (error) {
-    console.error("Auth Error:", error.response?.data || error.message);
-    return res.status(500).json({ status: "error", message: "Authentication failed" });
+    console.error('Auth Error:', error.response?.data || error.message);
+    return res.status(500).json({ status: 'error', message: 'Authentication failed' });
   }
 };
-
-export const githubRedirect = (req, res) => {
-  // Capture PKCE and custom redirect info from the CLI request
-  const { code_challenge, state } = req.query;
-
-
-  // These are the parameters GitHub needs to know who is asking for authentication and where to send the user back after login.
-  const params = new URLSearchParams({
-    client_id: process.env.GITHUB_CLIENT_ID,
-    redirect_uri: process.env.GITHUB_CALLBACK_URL,
-    scope: "read:user user:email", // We ask for identity and email
-    state: state || 'web', // If no state, assume it's the web app
-  });
-
-  const githubUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
-
-  // This sends the user to GitHub's login page
-  res.redirect(githubUrl);
-};
-
-
-
 
 export const refreshTokenHandler = async (req, res) => {
   // 1. Get the refresh token from cookies
@@ -190,27 +235,29 @@ export const refreshTokenHandler = async (req, res) => {
 
     // 7. RESPOND BASED ON CLIENT TYPE
     if (req.body.refresh_token) {
-      // CLI Request: Return as JSON
-      return res.json({
-        status: "success",
-        access_token: newAccessToken,
-        refresh_token: newRefreshToken
-      });
+      return res.json({ status: "success", access_token: newAccessToken, refresh_token: newRefreshToken });
     }
-    // Web Request: Return via Cookies
-    // 8. Update Cookies
+
     const isProduction = process.env.NODE_ENV === "production";
-    res.cookie("access_token", newAccessToken, { 
-      httpOnly: true, 
-      secure: isProduction, 
+    const csrfToken = req.cookies.csrf_token || crypto.randomBytes(24).toString('hex');
+
+    res.cookie("access_token", newAccessToken, {
+      httpOnly: true,
+      secure: isProduction,
       sameSite: "lax",
-      maxAge: 3 * 60 * 1000 
+      maxAge: 3 * 60 * 1000
     });
-    res.cookie("refresh_token", newRefreshToken, { 
-      httpOnly: true, 
-      secure: isProduction, 
+    res.cookie("refresh_token", newRefreshToken, {
+      httpOnly: true,
+      secure: isProduction,
       sameSite: "lax",
-      maxAge: 5 * 60 * 1000 
+      maxAge: 5 * 60 * 1000
+    });
+    res.cookie("csrf_token", csrfToken, {
+      httpOnly: false,
+      secure: isProduction,
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000
     });
 
     return res.json({ status: "success", message: "Tokens rotated" });
@@ -236,19 +283,16 @@ export const logoutHandler = async (req, res) => {
       await RefreshToken.deleteOne({ token: refreshToken });
     }
 
-    // 3. Clear the cookies on the browser
     const cookieOptions = {
-      httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax"
     };
-    res.clearCookie("access_token", cookieOptions);
-    res.clearCookie("refresh_token", cookieOptions);
 
-    return res.status(200).json({
-      status: "success",
-      message: "Logged out successfully"
-    });
+    res.clearCookie("access_token", { ...cookieOptions, httpOnly: true });
+    res.clearCookie("refresh_token", { ...cookieOptions, httpOnly: true });
+    res.clearCookie("csrf_token", { ...cookieOptions, httpOnly: false });
+
+    return res.status(200).json({ status: "success", message: "Logged out successfully" });
   } catch (error) {
     return res.status(500).json({
       status: "error",

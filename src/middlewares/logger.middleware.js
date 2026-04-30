@@ -11,7 +11,7 @@ export const requestLogger = (req, res, next) => {
       path: req.originalUrl,
       status: res.statusCode,
       duration: `${duration}ms`,
-      userId: req.user?.userId || "anonymous",
+      userId: req.user?.id || "anonymous",
       ip: req.ip
     };
 

@@ -5,6 +5,7 @@ import profileRoutes from "./routes/profileRoutes.js";
 import { requireApiVersion } from "./middlewares/requireApiVersion.js";
 import { authLimiter, apiLimiter } from "./middlewares/limiter.middleware.js";
 import { requestLogger } from "./middlewares/logger.middleware.js";
+import { requireCsrf } from "./middlewares/csrf.middleware.js";
 import authRoutes from './routes/authRoutes.js';
 import cookieParser from "cookie-parser";
 import { authenticate } from "./middlewares/auth.middleware.js";
@@ -36,8 +37,8 @@ app.use('/auth', authLimiter, authRoutes);
 app.use("/api", requireApiVersion);
 
 // 5. Protected Routes Setup
-// Option A: Apply globally to /api
 app.use("/api", authenticate);
+app.use("/api", requireCsrf);
 app.use("/api/profiles", apiLimiter, profileRoutes); // Apply auth and rate limiting to profile routes
 
 // // Option B (Recommended): Apply specifically to the routes that need it
