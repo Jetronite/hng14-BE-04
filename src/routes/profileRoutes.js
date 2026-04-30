@@ -14,11 +14,11 @@ const router = express.Router();
 // Mixed Roles (Analyst & Admin)
 router.get("/", authorize("admin", "analyst"), getProfiles);
 router.get("/search", authorize("admin", "analyst"), searchProfiles);
+router.get("/export", authorize("admin", "analyst"), exportProfiles);
 router.get("/:id", authorize("admin", "analyst"), getProfileById); // support single profile fetch
 
 // Admin Only
 router.post("/", authorize("admin"), createProfile);
-router.get("/export", authorize("admin"), exportProfiles);
 router.delete("/:id", authorize("admin"), deleteProfile);
 
 export default router;
