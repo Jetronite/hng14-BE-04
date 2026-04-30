@@ -80,9 +80,13 @@ describe('Auth System Lifecycle & Security (Hybrid)', () => {
       });
     });
 
+    const redirectRes = await request(app).get('/auth/github');
+    const redirectUrl = new URL(redirectRes.header.location);
+    const state = redirectUrl.searchParams.get('state');
+
     const response = await request(app)
       .get('/auth/github/callback')
-      .query({ code: 'valid-code' });
+      .query({ code: 'valid-code', state });
 
     expect(response.status).toBe(302);
     expect(response.header.location).toBe(
@@ -127,7 +131,8 @@ describe('Auth System Lifecycle & Security (Hybrid)', () => {
 
     const response = await request(app)
       .post('/auth/refresh')
-      .set('Cookie', [`refresh_token=${oldToken}`]);
+      .set('Cookie', [`refresh_token=${oldToken}`, 'csrf_token=test-csrf-token'])
+      .set('x-csrf-token', 'test-csrf-token');
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('success');
@@ -163,7 +168,8 @@ describe('Auth System Lifecycle & Security (Hybrid)', () => {
 
     const response = await request(app)
       .post('/auth/refresh')
-      .set('Cookie', [`refresh_token=${token}`]);
+      .set('Cookie', [`refresh_token=${token}`, 'csrf_token=test-csrf-token'])
+      .set('x-csrf-token', 'test-csrf-token');
 
     expect(response.status).toBe(401);
     expect(response.body.message).toMatch(/expired|invalid/i);
@@ -195,7 +201,8 @@ describe('Auth System Lifecycle & Security (Hybrid)', () => {
 
     const response = await request(app)
       .post('/auth/logout')
-      .set('Cookie', [`refresh_token=${token}`]);
+      .set('Cookie', [`refresh_token=${token}`, 'csrf_token=test-csrf-token'])
+      .set('x-csrf-token', 'test-csrf-token');
 
     expect(response.status).toBe(200);
 
@@ -230,12 +237,14 @@ describe('Auth System Lifecycle & Security (Hybrid)', () => {
     // first valid use
     await request(app)
       .post('/auth/refresh')
-      .set('Cookie', [`refresh_token=${token}`]);
+      .set('Cookie', [`refresh_token=${token}`, 'csrf_token=test-csrf-token'])
+      .set('x-csrf-token', 'test-csrf-token');
 
     // replay attempt
     const replay = await request(app)
       .post('/auth/refresh')
-      .set('Cookie', [`refresh_token=${token}`]);
+      .set('Cookie', [`refresh_token=${token}`, 'csrf_token=test-csrf-token'])
+      .set('x-csrf-token', 'test-csrf-token');
 
     expect(replay.status).toBe(401);
     expect(replay.body.message).toMatch(/invalid|expired|revoked/i);

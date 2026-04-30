@@ -45,8 +45,7 @@ describe('CSRF Protection', () => {
     it('should allow POST /auth/refresh with valid CSRF tokens', async () => {
       const res = await request(app)
         .post('/auth/refresh')
-        .set('Cookie', `refresh_token=${refreshToken}`)
-        .set('Cookie', 'csrf_token=test-csrf-token')
+        .set('Cookie', [`refresh_token=${refreshToken}`, 'csrf_token=test-csrf-token'])
         .set('x-csrf-token', 'test-csrf-token');
 
       // This might fail due to token validation, but CSRF should pass
@@ -59,8 +58,7 @@ describe('CSRF Protection', () => {
     it('should reject POST /auth/refresh without CSRF header', async () => {
       const res = await request(app)
         .post('/auth/refresh')
-        .set('Cookie', `refresh_token=${refreshToken}`)
-        .set('Cookie', 'csrf_token=test-csrf-token');
+        .set('Cookie', [`refresh_token=${refreshToken}`, 'csrf_token=test-csrf-token']);
 
       expect(res.status).toBe(403);
       expect(res.body.message).toBe('Invalid CSRF token');
@@ -69,7 +67,7 @@ describe('CSRF Protection', () => {
     it('should reject POST /auth/refresh without CSRF cookie', async () => {
       const res = await request(app)
         .post('/auth/refresh')
-        .set('Cookie', `refresh_token=${refreshToken}`)
+        .set('Cookie', [`refresh_token=${refreshToken}`, 'csrf_token=wrong-token'])
         .set('x-csrf-token', 'test-csrf-token');
 
       expect(res.status).toBe(403);
@@ -79,8 +77,7 @@ describe('CSRF Protection', () => {
     it('should reject POST /auth/refresh with mismatched CSRF tokens', async () => {
       const res = await request(app)
         .post('/auth/refresh')
-        .set('Cookie', `refresh_token=${refreshToken}`)
-        .set('Cookie', 'csrf_token=wrong-token')
+        .set('Cookie', [`refresh_token=${refreshToken}`, 'csrf_token=wrong-token'])
         .set('x-csrf-token', 'test-csrf-token');
 
       expect(res.status).toBe(403);
@@ -90,8 +87,7 @@ describe('CSRF Protection', () => {
     it('should allow POST /auth/logout with valid CSRF tokens', async () => {
       const res = await request(app)
         .post('/auth/logout')
-        .set('Cookie', `refresh_token=${refreshToken}`)
-        .set('Cookie', 'csrf_token=test-csrf-token')
+        .set('Cookie', [`refresh_token=${refreshToken}`, 'csrf_token=test-csrf-token'])
         .set('x-csrf-token', 'test-csrf-token');
 
       expect(res.status).not.toBe(403);

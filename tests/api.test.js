@@ -13,6 +13,9 @@ describe("API Versioning, Pagination and Filtering", () => {
       await mongoose.connect(uri);
     }
 
+    // Clean up any leftover test users from previous runs
+    await User.deleteMany({ $or: [{ id: 'test-analyst-id' }, { github_id: 'testanalyst123' }] });
+
     // Create a test analyst user
     const analystUser = await User.create({
       id: 'test-analyst-id',

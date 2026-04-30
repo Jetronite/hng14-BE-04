@@ -46,7 +46,7 @@ export const registerPkceSession = (req, res) => {
     clientType: 'cli'
   });
 
-  return res.status(200).json({ status: 'success' });
+  return res.status(200).json({ status: 'success', message: 'PKCE session registered' });
 };
 
 export const githubRedirect = (req, res) => {
@@ -85,7 +85,12 @@ export const githubRedirect = (req, res) => {
     code_challenge_method: 'S256'
   });
 
-  return res.redirect(`https://github.com/login/oauth/authorize?${params.toString()}`);
+  const query = params.toString().replace(
+    encodeURIComponent('read:user user:email'),
+    'read:user+user:email'
+  );
+
+  return res.redirect(`https://github.com/login/oauth/authorize?${query}`);
 };
 
 export const githubCallback = async (req, res) => {
@@ -98,7 +103,7 @@ export const githubCallback = async (req, res) => {
 
     const session = pkceSessions.get(state);
     if (!session || !session.codeVerifier) {
-      return res.status(400).json({ status: 'error', message: 'PKCE session expired or missing' });
+      return res.status(400).json({ status: 'error', message: 'Invalid state or PKCE session expired' });
     }
 
     pkceSessions.delete(state);
@@ -182,8 +187,8 @@ export const githubCallback = async (req, res) => {
 };
 
 export const refreshTokenHandler = async (req, res) => {
-  // 1. Get the refresh token from cookies
-  const refreshToken = req.cookies.refresh_token || req.body.refresh_token;;
+  // 1. Get the refresh token from cookies or body
+  const refreshToken = req.cookies.refresh_token || req.body.refresh_token;
 
   if (!refreshToken) {
     return res.status(401).json({ status: "error", message: "Refresh token missing" });
@@ -233,11 +238,13 @@ export const refreshTokenHandler = async (req, res) => {
       expires_at: new Date(Date.now() + 5 * 60 * 1000)
     });
 
-    // 7. RESPOND BASED ON CLIENT TYPE
+    // 8. RESPOND BASED ON CLIENT TYPE
+    // If refresh_token was in body, return JSON (CLI/API client)
     if (req.body.refresh_token) {
       return res.json({ status: "success", access_token: newAccessToken, refresh_token: newRefreshToken });
     }
 
+    // Otherwise, use cookies (web browser)
     const isProduction = process.env.NODE_ENV === "production";
     const csrfToken = req.cookies.csrf_token || crypto.randomBytes(24).toString('hex');
 
@@ -265,9 +272,10 @@ export const refreshTokenHandler = async (req, res) => {
   } catch (err) {
     // If it's an expired error, we can proactively delete it from the DB
     if (err.name === 'TokenExpiredError') {
-      const refreshToken = req.cookies.refresh_token;
-      await RefreshToken.deleteOne({ token: refreshToken });
-    }     // If verification fails or tampered
+      const token = req.cookies.refresh_token || req.body.refresh_token;
+      await RefreshToken.deleteOne({ token });
+    }
+    // If verification fails or tampered
     return res.status(401).json({ status: "error", message: "Session expired" });
   }
 };

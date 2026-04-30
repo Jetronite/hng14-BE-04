@@ -76,7 +76,7 @@ describe('Role-Based Access Control', () => {
         .set('X-API-Version', '1')
         .send({ name: 'Test Profile' });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(201);
       expect(res.body.status).toBe('success');
       expect(res.body.data.name).toBe('Test Profile');
     });

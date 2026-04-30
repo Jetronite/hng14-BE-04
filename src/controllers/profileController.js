@@ -19,14 +19,6 @@ export const searchProfiles = async (req, res) => {
     }
 
     const filterParams = parseQuery(q);
-
-    if (!filterParams || Object.keys(filterParams).length === 0) {
-      return res.status(400).json({
-        status: "Bad Request",
-        message: "Unable to interpret query"
-      });
-    }
-
     const error = validateQueryParams(req.query);
     if (error) {
       return res.status(422).json({
@@ -35,7 +27,23 @@ export const searchProfiles = async (req, res) => {
       });
     }
 
-    const queryObj = buildMongoQuery(filterParams);
+    const queryObj = buildMongoQuery(filterParams || {});
+    if (!filterParams) {
+      // Only fallback to generic text search for simple alphabetic queries
+      // (e.g. 'test' or 'young males'). Queries containing digits or
+      // unusual characters are considered uninterpretable by design.
+      const isAlphabetic = /^[\p{L}\s]+$/u.test(q);
+      if (!isAlphabetic) {
+        return res.status(400).json({ status: "error", message: "Unable to interpret query" });
+      }
+
+      // Fallback to a generic text search on profile name and country_name.
+      queryObj.$or = [
+        { name: { $regex: q, $options: "i" } },
+        { country_name: { $regex: q, $options: "i" } }
+      ];
+    }
+
     const { limit, skip, sort, page } = buildOptions({ page: rawPage, limit: rawLimit });
 
     const [data, total] = await Promise.all([
